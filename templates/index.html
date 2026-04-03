@@ -1,0 +1,787 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NoteGen — AI Text Summarizer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:ital,wght@0,400;0,500;1,400&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet" />
+  <style>
+    /* ─── Reset & Variables ─────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --ink:       #0a0a0f;
+      --paper:     #f5f2eb;
+      --cream:     #ede9df;
+      --accent:    #e8450a;
+      --accent2:   #1a6b3c;
+      --muted:     #8a8070;
+      --border:    #d4cfc4;
+      --card:      #ffffff;
+      --shadow:    0 2px 24px rgba(10,10,15,0.08);
+      --radius:    12px;
+      --mono:      'DM Mono', monospace;
+      --sans:      'DM Sans', sans-serif;
+      --display:   'Syne', sans-serif;
+      --transition: 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: var(--sans);
+      background: var(--paper);
+      color: var(--ink);
+      min-height: 100vh;
+      line-height: 1.6;
+    }
+
+    /* ─── Noise texture overlay ─────────────────────────────── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ─── Header ────────────────────────────────────────────── */
+    header {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(245,242,235,0.88);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      padding: 0 clamp(1rem, 5vw, 3rem);
+    }
+    .header-inner {
+      max-width: 1100px; margin: 0 auto;
+      display: flex; align-items: center; justify-content: space-between;
+      height: 64px;
+    }
+    .logo {
+      font-family: var(--display);
+      font-size: 1.5rem; font-weight: 800;
+      letter-spacing: -0.04em; color: var(--ink);
+      display: flex; align-items: center; gap: 8px;
+    }
+    .logo-dot { color: var(--accent); }
+    .badge {
+      font-family: var(--mono);
+      font-size: 0.65rem; font-weight: 500;
+      background: var(--accent); color: #fff;
+      padding: 3px 8px; border-radius: 4px;
+      letter-spacing: 0.08em; text-transform: uppercase;
+    }
+    nav a {
+      font-size: 0.85rem; font-weight: 500; color: var(--muted);
+      text-decoration: none; margin-left: 1.5rem;
+      transition: color var(--transition);
+    }
+    nav a:hover { color: var(--ink); }
+
+    /* ─── Hero ──────────────────────────────────────────────── */
+    .hero {
+      max-width: 1100px; margin: 0 auto;
+      padding: clamp(3rem, 8vw, 6rem) clamp(1rem, 5vw, 3rem) 2rem;
+      display: grid; grid-template-columns: 1fr auto;
+      align-items: end; gap: 2rem;
+    }
+    .hero-tag {
+      font-family: var(--mono);
+      font-size: 0.75rem; color: var(--accent);
+      letter-spacing: 0.12em; text-transform: uppercase;
+      margin-bottom: 1rem;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .hero-tag::before {
+      content: ''; display: inline-block;
+      width: 24px; height: 1px; background: var(--accent);
+    }
+    h1 {
+      font-family: var(--display);
+      font-size: clamp(2.5rem, 6vw, 4.5rem);
+      font-weight: 800; line-height: 1.05;
+      letter-spacing: -0.04em; color: var(--ink);
+    }
+    h1 em { color: var(--accent); font-style: normal; }
+    .hero-sub {
+      margin-top: 1.2rem;
+      font-size: 1.05rem; color: var(--muted);
+      max-width: 520px; font-weight: 300;
+    }
+    .hero-stats {
+      display: flex; gap: 2rem;
+      border-left: 2px solid var(--border);
+      padding-left: 2rem;
+    }
+    .stat { text-align: center; }
+    .stat-num {
+      font-family: var(--display);
+      font-size: 2rem; font-weight: 800;
+      color: var(--ink); line-height: 1;
+    }
+    .stat-label {
+      font-family: var(--mono);
+      font-size: 0.65rem; color: var(--muted);
+      letter-spacing: 0.1em; text-transform: uppercase;
+      margin-top: 4px;
+    }
+
+    /* ─── Main Layout ───────────────────────────────────────── */
+    main {
+      max-width: 1100px; margin: 0 auto;
+      padding: 2rem clamp(1rem, 5vw, 3rem) 4rem;
+    }
+
+    /* ─── Tab Switcher ──────────────────────────────────────── */
+    .tabs {
+      display: flex; gap: 4px;
+      background: var(--cream);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 4px; margin-bottom: 2rem;
+      width: fit-content;
+    }
+    .tab-btn {
+      font-family: var(--sans);
+      font-size: 0.875rem; font-weight: 500;
+      padding: 8px 20px; border: none; cursor: pointer;
+      border-radius: 8px; background: transparent;
+      color: var(--muted); transition: all var(--transition);
+    }
+    .tab-btn.active {
+      background: var(--card);
+      color: var(--ink);
+      box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+    }
+    .tab-btn:hover:not(.active) { color: var(--ink); }
+
+    /* ─── Panel ─────────────────────────────────────────────── */
+    .panel { display: none; }
+    .panel.active { display: block; }
+
+    /* ─── Card ──────────────────────────────────────────────── */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 2rem;
+      box-shadow: var(--shadow);
+    }
+
+    /* ─── Form Elements ─────────────────────────────────────── */
+    label {
+      display: block;
+      font-size: 0.78rem; font-weight: 500;
+      color: var(--muted); letter-spacing: 0.06em;
+      text-transform: uppercase; margin-bottom: 6px;
+    }
+    textarea {
+      width: 100%; resize: vertical;
+      font-family: var(--sans); font-size: 0.95rem;
+      color: var(--ink); background: var(--paper);
+      border: 1px solid var(--border); border-radius: 8px;
+      padding: 14px 16px; outline: none;
+      transition: border-color var(--transition);
+      min-height: 200px; line-height: 1.7;
+    }
+    textarea:focus { border-color: var(--ink); }
+    textarea::placeholder { color: var(--muted); }
+
+    .options-row {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 1rem; margin-top: 1.2rem;
+    }
+    .option-field { display: flex; flex-direction: column; gap: 6px; }
+    .option-field input[type="range"] {
+      -webkit-appearance: none; width: 100%; height: 4px;
+      background: var(--border); border-radius: 2px; outline: none;
+      cursor: pointer;
+    }
+    .option-field input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 16px; height: 16px; border-radius: 50%;
+      background: var(--accent); cursor: pointer;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+    }
+    .range-val {
+      font-family: var(--mono); font-size: 0.8rem;
+      color: var(--accent); font-weight: 500;
+    }
+
+    /* ─── File Drop Zone ────────────────────────────────────── */
+    .drop-zone {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 3rem 2rem;
+      text-align: center; cursor: pointer;
+      transition: all var(--transition);
+      background: var(--paper);
+      position: relative; overflow: hidden;
+    }
+    .drop-zone:hover, .drop-zone.dragover {
+      border-color: var(--accent);
+      background: rgba(232,69,10,0.03);
+    }
+    .drop-zone input[type="file"] {
+      position: absolute; inset: 0;
+      opacity: 0; cursor: pointer; width: 100%; height: 100%;
+    }
+    .drop-icon {
+      font-size: 2.5rem; margin-bottom: 0.75rem;
+      display: block; line-height: 1;
+    }
+    .drop-title {
+      font-family: var(--display);
+      font-size: 1.1rem; font-weight: 700;
+      color: var(--ink); margin-bottom: 4px;
+    }
+    .drop-sub { font-size: 0.85rem; color: var(--muted); }
+    .file-selected {
+      margin-top: 1rem; padding: 10px 14px;
+      background: var(--cream); border-radius: 8px;
+      font-family: var(--mono); font-size: 0.8rem;
+      color: var(--accent2); border: 1px solid var(--border);
+      display: none; text-align: left;
+    }
+    .file-selected.visible { display: block; }
+
+    /* ─── Submit Button ─────────────────────────────────────── */
+    .btn-primary {
+      margin-top: 1.5rem;
+      display: inline-flex; align-items: center; gap: 8px;
+      font-family: var(--display);
+      font-size: 0.95rem; font-weight: 700;
+      padding: 14px 28px;
+      background: var(--ink); color: var(--paper);
+      border: none; border-radius: 8px;
+      cursor: pointer; transition: all var(--transition);
+      letter-spacing: -0.01em;
+    }
+    .btn-primary:hover { background: var(--accent); transform: translateY(-1px); }
+    .btn-primary:active { transform: translateY(0); }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    .btn-icon { font-size: 1rem; transition: transform var(--transition); }
+    .btn-primary:hover .btn-icon { transform: translateX(3px); }
+
+    /* ─── Spinner ───────────────────────────────────────────── */
+    .spinner {
+      display: none; width: 18px; height: 18px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: #fff; border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ─── Result Card ───────────────────────────────────────── */
+    .result-section {
+      margin-top: 2rem;
+      animation: fadeUp 0.4s ease both;
+      display: none;
+    }
+    .result-section.visible { display: block; }
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(12px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .result-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 1rem;
+    }
+    .result-title {
+      font-family: var(--display);
+      font-size: 1rem; font-weight: 700; color: var(--ink);
+      display: flex; align-items: center; gap: 8px;
+    }
+    .result-title::before {
+      content: ''; display: inline-block;
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--accent2);
+      animation: pulse 2s ease infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%       { opacity: 0.5; transform: scale(0.8); }
+    }
+
+    .copy-btn {
+      font-family: var(--mono); font-size: 0.75rem;
+      padding: 6px 12px; border-radius: 6px;
+      border: 1px solid var(--border);
+      background: transparent; color: var(--muted);
+      cursor: pointer; transition: all var(--transition);
+    }
+    .copy-btn:hover { color: var(--ink); border-color: var(--ink); }
+    .copy-btn.copied { color: var(--accent2); border-color: var(--accent2); }
+
+    .summary-text {
+      font-size: 1rem; line-height: 1.8; color: var(--ink);
+      background: var(--paper);
+      border: 1px solid var(--border);
+      border-radius: 8px; padding: 1.5rem;
+      border-left: 3px solid var(--accent2);
+    }
+
+    /* ─── Metrics Row ───────────────────────────────────────── */
+    .metrics {
+      display: grid; grid-template-columns: repeat(3, 1fr);
+      gap: 1rem; margin-top: 1.2rem;
+    }
+    .metric {
+      background: var(--cream);
+      border: 1px solid var(--border); border-radius: 8px;
+      padding: 1rem; text-align: center;
+    }
+    .metric-num {
+      font-family: var(--display);
+      font-size: 1.6rem; font-weight: 800;
+      color: var(--ink);
+    }
+    .metric-label {
+      font-family: var(--mono);
+      font-size: 0.65rem; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.08em;
+      margin-top: 4px;
+    }
+    .metric-accent .metric-num { color: var(--accent); }
+
+    /* ─── Model Badge ───────────────────────────────────────── */
+    .model-tag {
+      margin-top: 1rem;
+      display: inline-flex; align-items: center; gap: 6px;
+      font-family: var(--mono); font-size: 0.72rem;
+      color: var(--muted); padding: 4px 10px;
+      background: var(--cream); border-radius: 4px;
+      border: 1px solid var(--border);
+    }
+
+    /* ─── Error Banner ──────────────────────────────────────── */
+    .error-banner {
+      margin-top: 1rem; padding: 14px 16px;
+      background: rgba(232,69,10,0.07);
+      border: 1px solid rgba(232,69,10,0.3);
+      border-radius: 8px; border-left: 3px solid var(--accent);
+      color: var(--accent); font-size: 0.9rem;
+      display: none;
+    }
+    .error-banner.visible { display: block; }
+
+    /* ─── How It Works ──────────────────────────────────────── */
+    .how-section {
+      margin-top: 3rem;
+      border-top: 1px solid var(--border); padding-top: 3rem;
+    }
+    .section-label {
+      font-family: var(--mono);
+      font-size: 0.7rem; color: var(--muted);
+      letter-spacing: 0.12em; text-transform: uppercase;
+      margin-bottom: 1.5rem;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .section-label::after {
+      content: ''; flex: 1; height: 1px; background: var(--border);
+    }
+    .steps {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+    }
+    .step {
+      padding: 1.5rem; background: var(--cream);
+      border: 1px solid var(--border); border-radius: var(--radius);
+    }
+    .step-num {
+      font-family: var(--display);
+      font-size: 2rem; font-weight: 800;
+      color: var(--border); line-height: 1; margin-bottom: 0.75rem;
+    }
+    .step-title {
+      font-family: var(--display);
+      font-size: 0.95rem; font-weight: 700;
+      color: var(--ink); margin-bottom: 0.5rem;
+    }
+    .step-desc { font-size: 0.85rem; color: var(--muted); }
+
+    /* ─── Footer ────────────────────────────────────────────── */
+    footer {
+      border-top: 1px solid var(--border);
+      background: var(--cream);
+      padding: 1.5rem clamp(1rem, 5vw, 3rem);
+      text-align: center;
+    }
+    .footer-inner {
+      max-width: 1100px; margin: 0 auto;
+      display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap; gap: 1rem;
+    }
+    .footer-text {
+      font-family: var(--mono); font-size: 0.75rem; color: var(--muted);
+    }
+    .footer-links { display: flex; gap: 1rem; }
+    .footer-links a {
+      font-family: var(--mono); font-size: 0.75rem;
+      color: var(--muted); text-decoration: none;
+      transition: color var(--transition);
+    }
+    .footer-links a:hover { color: var(--accent); }
+
+    /* ─── Responsive ────────────────────────────────────────── */
+    @media (max-width: 640px) {
+      .hero { grid-template-columns: 1fr; }
+      .hero-stats { border-left: none; border-top: 1px solid var(--border);
+                    padding-left: 0; padding-top: 1.5rem; }
+      .options-row { grid-template-columns: 1fr; }
+      .metrics { grid-template-columns: 1fr 1fr; }
+      .footer-inner { flex-direction: column; text-align: center; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Header ──────────────────────────────────────────────── -->
+<header>
+  <div class="header-inner">
+    <div class="logo">
+      NoteGen<span class="logo-dot">.</span>
+      <span class="badge">AI</span>
+    </div>
+    <nav>
+      <a href="/docs" target="_blank">API Docs</a>
+      <a href="/health" target="_blank">Health</a>
+      <a href="https://github.com" target="_blank">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<!-- ── Hero ────────────────────────────────────────────────── -->
+<section class="hero">
+  <div>
+    <p class="hero-tag">Powered by Hugging Face Transformers</p>
+    <h1>Summarize anything.<br><em>Instantly.</em></h1>
+    <p class="hero-sub">
+      Paste long articles, reports, or upload PDFs and get a concise,
+      AI-generated summary in seconds — no sign-up, no cost.
+    </p>
+  </div>
+  <div class="hero-stats">
+    <div class="stat">
+      <div class="stat-num">10×</div>
+      <div class="stat-label">Compression</div>
+    </div>
+    <div class="stat">
+      <div class="stat-num">CPU</div>
+      <div class="stat-label">No GPU needed</div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Main ────────────────────────────────────────────────── -->
+<main>
+  <!-- Tab Switcher -->
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('text', this)">📝 Paste Text</button>
+    <button class="tab-btn" onclick="switchTab('file', this)">📎 Upload File</button>
+  </div>
+
+  <!-- ── Text Tab ── -->
+  <div id="panel-text" class="panel active">
+    <div class="card">
+      <label for="inputText">Your Text</label>
+      <textarea id="inputText" rows="10"
+        placeholder="Paste your article, essay, or any long text here (minimum 50 characters)…"></textarea>
+
+      <div class="options-row">
+        <div class="option-field">
+          <label for="maxLen">Max Summary Length — <span class="range-val" id="maxVal">150</span> tokens</label>
+          <input type="range" id="maxLen" min="30" max="500" value="150"
+                 oninput="document.getElementById('maxVal').textContent = this.value" />
+        </div>
+        <div class="option-field">
+          <label for="minLen">Min Summary Length — <span class="range-val" id="minVal">30</span> tokens</label>
+          <input type="range" id="minLen" min="10" max="200" value="30"
+                 oninput="document.getElementById('minVal').textContent = this.value" />
+        </div>
+      </div>
+
+      <button class="btn-primary" id="summarizeBtn" onclick="summarizeText()">
+        <span class="btn-icon">⚡</span>
+        Generate Summary
+        <div class="spinner" id="textSpinner"></div>
+      </button>
+
+      <div class="error-banner" id="textError"></div>
+    </div>
+
+    <!-- Result -->
+    <div class="result-section" id="textResult">
+      <div class="card">
+        <div class="result-header">
+          <div class="result-title">AI Summary</div>
+          <button class="copy-btn" id="copyTextBtn" onclick="copyText('summaryOutput', 'copyTextBtn')">Copy</button>
+        </div>
+        <div class="summary-text" id="summaryOutput"></div>
+        <div class="metrics">
+          <div class="metric">
+            <div class="metric-num" id="origWords">—</div>
+            <div class="metric-label">Original Words</div>
+          </div>
+          <div class="metric">
+            <div class="metric-num" id="summWords">—</div>
+            <div class="metric-label">Summary Words</div>
+          </div>
+          <div class="metric metric-accent">
+            <div class="metric-num" id="ratio">—</div>
+            <div class="metric-label">Compression ×</div>
+          </div>
+        </div>
+        <div class="model-tag">🤖 Model: <span id="modelUsed">—</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── File Tab ── -->
+  <div id="panel-file" class="panel">
+    <div class="card">
+      <label>Upload PDF or TXT File</label>
+      <div class="drop-zone" id="dropZone">
+        <input type="file" id="fileInput" accept=".pdf,.txt" onchange="onFileSelect(this)" />
+        <span class="drop-icon">📄</span>
+        <div class="drop-title">Drop your file here</div>
+        <div class="drop-sub">or click to browse — PDF & TXT up to 10 MB</div>
+      </div>
+      <div class="file-selected" id="fileSelected"></div>
+
+      <div class="options-row">
+        <div class="option-field">
+          <label for="fMaxLen">Max Summary Length — <span class="range-val" id="fMaxVal">150</span> tokens</label>
+          <input type="range" id="fMaxLen" min="30" max="500" value="150"
+                 oninput="document.getElementById('fMaxVal').textContent = this.value" />
+        </div>
+        <div class="option-field">
+          <label for="fMinLen">Min Summary Length — <span class="range-val" id="fMinVal">30</span> tokens</label>
+          <input type="range" id="fMinLen" min="10" max="200" value="30"
+                 oninput="document.getElementById('fMinVal').textContent = this.value" />
+        </div>
+      </div>
+
+      <button class="btn-primary" id="uploadBtn" onclick="uploadFile()">
+        <span class="btn-icon">📤</span>
+        Upload & Summarize
+        <div class="spinner" id="fileSpinner"></div>
+      </button>
+
+      <div class="error-banner" id="fileError"></div>
+    </div>
+
+    <!-- Result -->
+    <div class="result-section" id="fileResult">
+      <div class="card">
+        <div class="result-header">
+          <div class="result-title">AI Summary</div>
+          <button class="copy-btn" id="copyFileBtn" onclick="copyText('fileSummaryOutput', 'copyFileBtn')">Copy</button>
+        </div>
+        <div class="summary-text" id="fileSummaryOutput"></div>
+        <div class="metrics">
+          <div class="metric">
+            <div class="metric-num" id="fOrigWords">—</div>
+            <div class="metric-label">Original Words</div>
+          </div>
+          <div class="metric">
+            <div class="metric-num" id="fSummWords">—</div>
+            <div class="metric-label">Summary Words</div>
+          </div>
+          <div class="metric metric-accent">
+            <div class="metric-num" id="fRatio">—</div>
+            <div class="metric-label">Compression ×</div>
+          </div>
+        </div>
+        <div class="model-tag">📁 File: <span id="fileNameUsed">—</span> &nbsp;|&nbsp; 🤖 <span id="fModelUsed">—</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── How It Works ── -->
+  <div class="how-section">
+    <p class="section-label">How It Works</p>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">01</div>
+        <div class="step-title">Input</div>
+        <div class="step-desc">Paste text or upload a PDF/TXT file through the clean interface or REST API.</div>
+      </div>
+      <div class="step">
+        <div class="step-num">02</div>
+        <div class="step-title">Chunk</div>
+        <div class="step-desc">Long texts are split into 400-word chunks to fit the model's context window.</div>
+      </div>
+      <div class="step">
+        <div class="step-num">03</div>
+        <div class="step-title">Summarize</div>
+        <div class="step-desc">DistilBART (Hugging Face) generates a summary for each chunk on CPU.</div>
+      </div>
+      <div class="step">
+        <div class="step-num">04</div>
+        <div class="step-title">Merge</div>
+        <div class="step-desc">Chunk summaries are combined and optionally re-summarized into a final result.</div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- ── Footer ──────────────────────────────────────────────── -->
+<footer>
+  <div class="footer-inner">
+    <p class="footer-text">NoteGen v1.0 — Built with FastAPI & Hugging Face Transformers</p>
+    <div class="footer-links">
+      <a href="/docs">Swagger UI</a>
+      <a href="/redoc">ReDoc</a>
+      <a href="/health">Health Check</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+  /* ── Tab Switching ─────────────────────────────────────────── */
+  function switchTab(name, btn) {
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('panel-' + name).classList.add('active');
+    btn.classList.add('active');
+  }
+
+  /* ── Drag-and-drop highlight ──────────────────────────────── */
+  const dz = document.getElementById('dropZone');
+  dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('dragover'); });
+  dz.addEventListener('dragleave', () => dz.classList.remove('dragover'));
+  dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('dragover'); });
+
+  function onFileSelect(input) {
+    const file = input.files[0];
+    if (!file) return;
+    const el = document.getElementById('fileSelected');
+    el.textContent = `✓ Selected: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+    el.classList.add('visible');
+  }
+
+  /* ── Summarize Text ───────────────────────────────────────── */
+  async function summarizeText() {
+    const text = document.getElementById('inputText').value.trim();
+    const maxLength = +document.getElementById('maxLen').value;
+    const minLength = +document.getElementById('minLen').value;
+    const errEl = document.getElementById('textError');
+    const resultEl = document.getElementById('textResult');
+    const btn = document.getElementById('summarizeBtn');
+    const spinner = document.getElementById('textSpinner');
+
+    errEl.classList.remove('visible');
+    resultEl.classList.remove('visible');
+
+    if (!text || text.length < 50) {
+      showError(errEl, 'Please enter at least 50 characters of text.');
+      return;
+    }
+
+    setLoading(btn, spinner, true);
+
+    try {
+      const res = await fetch('/api/summarize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, max_length: maxLength, min_length: minLength }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        showError(errEl, data.detail || 'Something went wrong. Please try again.');
+        return;
+      }
+
+      document.getElementById('summaryOutput').textContent = data.summary;
+      document.getElementById('origWords').textContent   = data.original_length.toLocaleString();
+      document.getElementById('summWords').textContent   = data.summary_length.toLocaleString();
+      document.getElementById('ratio').textContent       = data.compression_ratio + '×';
+      document.getElementById('modelUsed').textContent   = data.model_used;
+      resultEl.classList.add('visible');
+      resultEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    } catch (e) {
+      showError(errEl, 'Network error. Is the server running?');
+    } finally {
+      setLoading(btn, spinner, false);
+    }
+  }
+
+  /* ── Upload & Summarize ───────────────────────────────────── */
+  async function uploadFile() {
+    const fileInput = document.getElementById('fileInput');
+    const file = fileInput.files[0];
+    const maxLength = +document.getElementById('fMaxLen').value;
+    const minLength = +document.getElementById('fMinLen').value;
+    const errEl  = document.getElementById('fileError');
+    const resultEl = document.getElementById('fileResult');
+    const btn = document.getElementById('uploadBtn');
+    const spinner = document.getElementById('fileSpinner');
+
+    errEl.classList.remove('visible');
+    resultEl.classList.remove('visible');
+
+    if (!file) {
+      showError(errEl, 'Please select a PDF or TXT file first.');
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('max_length', maxLength);
+    formData.append('min_length', minLength);
+
+    setLoading(btn, spinner, true);
+
+    try {
+      const res = await fetch('/api/upload', { method: 'POST', body: formData });
+      const data = await res.json();
+
+      if (!res.ok) {
+        showError(errEl, data.detail || 'Upload failed. Please try again.');
+        return;
+      }
+
+      document.getElementById('fileSummaryOutput').textContent = data.summary;
+      document.getElementById('fOrigWords').textContent = data.original_length.toLocaleString();
+      document.getElementById('fSummWords').textContent = data.summary_length.toLocaleString();
+      document.getElementById('fRatio').textContent     = data.compression_ratio + '×';
+      document.getElementById('fileNameUsed').textContent = data.filename;
+      document.getElementById('fModelUsed').textContent   = data.model_used;
+      resultEl.classList.add('visible');
+      resultEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    } catch (e) {
+      showError(errEl, 'Network error. Is the server running?');
+    } finally {
+      setLoading(btn, spinner, false);
+    }
+  }
+
+  /* ── Helpers ──────────────────────────────────────────────── */
+  function showError(el, msg) {
+    el.textContent = '⚠ ' + msg;
+    el.classList.add('visible');
+  }
+
+  function setLoading(btn, spinner, loading) {
+    btn.disabled = loading;
+    spinner.style.display = loading ? 'inline-block' : 'none';
+  }
+
+  async function copyText(elementId, btnId) {
+    const text = document.getElementById(elementId).textContent;
+    await navigator.clipboard.writeText(text);
+    const btn = document.getElementById(btnId);
+    btn.textContent = 'Copied!';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+  }
+</script>
+</body>
+</html>
